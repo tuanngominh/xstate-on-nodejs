@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "nodemon --ignore state-storage/ index.js"
   },
   "repository": {
     "type": "git",
@@ -18,6 +18,9 @@
   "homepage": "https://github.com/tuanngominh/xstate-on-nodejs#readme",
   "dependencies": {
     "express": "^4.17.1",
+    "jsonpath": "^1.1.1",
+    "lodash": "^4.17.21",
+    "nodemon": "^2.0.12",
     "shortid": "^2.2.16",
     "xstate": "^4.23.4"
   },

@@ -1,44 +1,13 @@
 import {createMachine, interpret, State, assign} from 'xstate';
+import {longRunAsyncTask1, longRunAsyncTask2, pollLongRunAsyncTask2} from './tasks.js';
+import {readState, writeState} from './state-persistence.js';
 
-function longRunAsyncTask1(context, event) {
-  console.log('longRunAsyncTask1 > start');
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      console.log('longRunAsyncTask1 > finish');
-      resolve();
-    }, 5000);
-  })
-}
-
-function longRunAsyncTask2(context, event) {
-  console.log('longRunAsyncTask2 > start');
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      console.log('longRunAsyncTask2 > finish');
-      resolve();
-    }, 5000);
-  })
-}
-
-function pollLongRunAsyncTask2(context, event)  {
-  console.log('pollLongRunAsyncTask2 > start', context.task2Count);
-  const task2Count = 'task2Count' in event ? context.task2Count : 0;
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      console.log('pollLongRunAsyncTask2 > finish')
-      resolve({
-        task2Count: task2Count + 1
-      });
-    }, 5000);
-  })
-}
-
-export const dagsMachine = createMachine(
+const dagsMachine = createMachine(
   {
     id: 'runDag',
     initial: 'blank',
     context: {},
-    states: {
+      states: {
       blank: {
         on: {
           NEXT: 'task1'
@@ -134,7 +103,7 @@ export const dagsMachine = createMachine(
   }
 );
 
-export function getMachine(previousMachineState) {
+function getMachine(previousMachineState) {
   let resolvedState = null;
   if (previousMachineState) {
     const previousState = State.create(previousMachineState);
@@ -148,4 +117,26 @@ export function getMachine(previousMachineState) {
     service.start();
   }
   return service;
+}
+
+export async function nextStep(jobId) {
+  const state = await readState(jobId);
+
+  const machine = getMachine(state);
+
+  let stateToPersist;
+  machine.onTransition(state => {
+    if (state.changed) {
+      console.log('state.changed', state.value);
+      stateToPersist = state;
+    }
+  });
+
+  machine.send({type: 'NEXT'});
+
+  if (stateToPersist) {
+    await writeState(jobId, stateToPersist);
+  }
+
+  return machine;
 }
