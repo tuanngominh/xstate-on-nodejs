@@ -7,18 +7,15 @@ const dagsMachine = createMachine(
     id: 'runDag',
     initial: 'blank',
     context: {},
-      states: {
+    states: {
       blank: {
         on: {
           NEXT: 'task1'
         }
       },
       task1: {
-        initial: 'task1Start',
+        initial: 'task1Execute',
         states: {
-          task1Start: {
-            NEXT: 'task1Execute1',
-          },
           task1Execute: {
             invoke: {
               src: longRunAsyncTask1,
@@ -27,14 +24,15 @@ const dagsMachine = createMachine(
             },
           },
           task1Done: {
-            type: 'final'
+            type: 'final',
+            on: {
+              NEXT: '#task2'
+            }
           }
-        },
-        on: {
-          NEXT: 'task2'
         }
       },
       task2: {
+        id: 'task2',
         initial: 'execute',
         states: {
           execute: {
@@ -124,15 +122,18 @@ export async function nextStep(jobId) {
 
   const machine = getMachine(state);
 
+  console.log('from state', machine.state.value);
+
   let stateToPersist;
   machine.onTransition(state => {
     if (state.changed) {
-      console.log('state.changed', state.value);
       stateToPersist = state;
+      console.log('to state', machine.state.value);
     }
   });
 
   machine.send({type: 'NEXT'});
+
 
   if (stateToPersist) {
     await writeState(jobId, stateToPersist);

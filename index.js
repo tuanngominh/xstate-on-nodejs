@@ -13,10 +13,11 @@ app.post('/async-machine', async (req, res, next) => {
     const machine = await asyncMachineNextStep(jobId);
     await new Promise((resolve, reject) => {
       setTimeout(() => {
-        console.log('await');
+        console.log('await so machine has time to run async effect');
         resolve();
-      }, 10000);
+      }, 3000);
     })
+    console.log('------')
     return res.status(200).json({
       jobId,
       step: machine.state.value,
