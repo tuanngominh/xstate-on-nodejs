@@ -3,7 +3,7 @@ import {readState, writeState} from './state-persistence.js';
 import {longRunAsyncTask1, longRunAsyncTask2, pollLongRunAsyncTask2} from './tasks.js';
 import jsonpath from 'jsonpath';
 import lodash from 'lodash';
-const {get} = lodash;
+const {get, isNil} = lodash;
 
 
 const dagsMachine = createMachine(
@@ -40,39 +40,32 @@ const dagsMachine = createMachine(
             meta: {
               run: 'pollLongRunAsyncTask2'
             },
-            entry: assign({
-              task2Count:  (context, event) => {
-                console.log('actions > setPollingResult > task2Count', context, event)
-                return get(event, 'data.task2Count', 0);
-              },
+            exit: assign({
+              task2Count:  (context, event) => get(event, 'data.task2Count', 0),
             }),
             on: {
-              NEXT: {
-                target: '#finish',
-                cond: (context, event) => {
-                  console.log('context.task2Count === 3', context.task2Count === 3);
-                  console.log('(event.data.task2Count === 3)', (event.data.task2Count === 3));
-                  return (event.data.task2Count === 3);
+              NEXT: [
+                {
+                  target: '#finish',
+                  cond: (context, event) => {
+                    return (event.data.task2Count === 4);
+                  },
                 },
-              },
+                {
+                  target: 'checkPolling',
+                  cond: (context, event) => {
+                    return (event.data.task2Count < 4);
+                  },
+                },
+              ],
               ERROR: '#error'
             }
+          },
+          checkPolling: {
+            on: {
+              NEXT: 'polling'
+            }
           }
-          // checkPolling: {
-          //   entry: assign({
-          //     task2Count:  (context, event) => {
-          //       console.log('actions > setPollingResult > task2Count', context, event)
-          //       return event.data.task2Count;
-          //     },
-          //   }),
-          //   always: [
-          //     {target: '#finish', cond: 'tasks2Done'},
-          //     {target: 'polling', cond: 'tasks2NotDone'}
-          //   ]
-          // }
-        },
-        on: {
-          NEXT: 'finish'
         }
       },
       finish: {
@@ -82,18 +75,6 @@ const dagsMachine = createMachine(
       error: {
         id: 'error',
         type: 'final'
-      }
-    }
-  },
-  {
-    guards: {
-      tasks2Done: (context, event) => {
-        console.log('tasks2Done', context.task2Count === 3, context);
-        return context.task2Count === 3
-      } ,
-      tasks2NotDone: (context, event) => {
-        console.log('tasks2NotDone', context.task2Count < 3, context);
-        return context.task2Count < 3;
       }
     }
   }
@@ -117,20 +98,11 @@ function getMachine(previousMachineState) {
 
 export async function nextStep(jobId) {
   const state = await readState(jobId);
-
   const machine = getMachine(state);
-
-  console.log('from state', machine.state.value);
-  const functionName = jsonpath.value(machine.state.meta, '$..run');
-
   const functions = {
     'longRunAsyncTask1': longRunAsyncTask1,
     'longRunAsyncTask2': longRunAsyncTask2,
     'pollLongRunAsyncTask2': pollLongRunAsyncTask2
-  }
-  let result;
-  if (functionName) {
-    result = await functions[functionName](machine.state.context);
   }
 
   let stateToPersist;
@@ -140,9 +112,23 @@ export async function nextStep(jobId) {
     }
   });
 
-  machine.send({type: 'NEXT', data: result});
+  console.log('from state', machine.state.value);
+  const functionName = jsonpath.value(machine.state.meta, '$..run');
+  let result;
+  if (functionName) {
+    result = await functions[functionName](machine.state.context);
+  }
 
-  console.log('to state', machine.state.value);
+  let syncTransition = false;
+  do {
+    machine.send({type: 'NEXT', data: result});
+    console.log('to state', machine.state.value);
+    console.log('to state meta', machine.state.meta)
+    console.log('syncTransition', isNil(jsonpath.value(machine.state.meta, '$..run')))
+    syncTransition = isNil(jsonpath.value(machine.state.meta, '$..run'));
+
+  } while(syncTransition && !machine.state.done);
+
   console.log('------')
 
   if (stateToPersist) {
